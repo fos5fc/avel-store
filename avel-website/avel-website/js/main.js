@@ -21,12 +21,21 @@ function slipperSVG(color, rot, alt){
   </svg>`;
 }
 
-/* ---------------- RENDER PRODUCT GRID ---------------- */
-function renderGrid(){
-  const grid = document.getElementById('productGrid');
-  grid.innerHTML = PRODUCTS.map(p => `
+/* ---------------- REUSABLE PRODUCT CARD ----------------
+   Same markup/classes power the Essential Silhouettes grid AND the
+   Trending Now carousel, so the hover image-swap + Quick Add reveal
+   (see .product-media .base/.alt and .quick-add in style.css) only
+   has to be defined once and works everywhere a .product-card is used.
+   Today the "primary/secondary image" is the inline SVG pair
+   (base = primary, alt = secondary); once real photography is added
+   under assets/images/, swap slipperSVG(...) below for
+   <img class="primary-img" ...> / <img class="secondary-img" ...>
+   using the same primary-img/secondary-img classes so the CSS
+   crossfade keeps working unchanged. ---------------- */
+function productCardHTML(p){
+  return `
     <div class="product-card" onclick="openProduct('${p.id}')">
-      <div class="product-media" style="background:${p.colors[0] === '#111111' ? '#D8C8B2' : '#D8C8B2'}">
+      <div class="product-media">
         ${slipperSVG(p.colors[0], p.rot, false)}
         ${slipperSVG(p.colors[1], p.rot, true)}
         <div class="wishlist" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-9.5-9C1 8 2.5 4 6.5 4c2 0 3.5 1.2 4.5 2.7C12 5.2 13.5 4 15.5 4 19.5 4 21 8 19.5 12c-2.5 4.5-7.5 9-7.5 9z"/></svg></div>
@@ -40,9 +49,52 @@ function renderGrid(){
           <span class="color">${p.color}</span>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+}
+
+/* ---------------- RENDER PRODUCT GRID ---------------- */
+function renderGrid(){
+  const grid = document.getElementById('productGrid');
+  grid.innerHTML = PRODUCTS.map(productCardHTML).join('');
 }
 renderGrid();
+
+/* ---------------- RENDER TRENDING NOW CAROUSEL ---------------- */
+function renderTrending(){
+  const track = document.getElementById('trendingTrack');
+  if(!track) return;
+  track.innerHTML = PRODUCTS.map(p => `<div class="trending-item">${productCardHTML(p)}</div>`).join('');
+}
+renderTrending();
+
+function scrollTrending(dir){
+  const track = document.getElementById('trendingTrack');
+  if(!track) return;
+  const card = track.querySelector('.trending-item');
+  const step = card ? card.getBoundingClientRect().width + 24 : 280;
+  track.scrollBy({left: dir*step, behavior:'smooth'});
+}
+
+/* Mouse-drag scrolling for the Trending Now carousel (desktop) */
+(function initTrendingDrag(){
+  const track = document.getElementById('trendingTrack');
+  if(!track) return;
+  let isDown = false, startX = 0, startScroll = 0, dragged = false;
+  track.addEventListener('mousedown', (e)=>{
+    isDown = true; dragged = false;
+    startX = e.pageX; startScroll = track.scrollLeft;
+    track.classList.add('dragging');
+  });
+  window.addEventListener('mouseup', ()=>{ isDown = false; track.classList.remove('dragging'); });
+  window.addEventListener('mousemove', (e)=>{
+    if(!isDown) return;
+    const dx = e.pageX - startX;
+    if(Math.abs(dx) > 4) dragged = true;
+    track.scrollLeft = startScroll - dx;
+  });
+  // Suppress the click-through to openProduct() when the user was dragging
+  track.addEventListener('click', (e)=>{ if(dragged){ e.stopPropagation(); e.preventDefault(); dragged = false; } }, true);
+})();
 
 /* ---------------- PRODUCT VIEW ---------------- */
 function openProduct(id){
@@ -165,12 +217,38 @@ function removeFromCart(key){
 function toggleCart(open){
   document.getElementById('cartDrawer').classList.toggle('open', open);
   document.getElementById('overlay').classList.toggle('open', open);
+  syncBodyScrollLock();
 }
 renderCart();
+
+/* ---------------- SEARCH DRAWER ---------------- */
+function toggleSearch(open){
+  document.getElementById('searchDrawer').classList.toggle('open', open);
+  document.getElementById('searchOverlay').classList.toggle('open', open);
+  syncBodyScrollLock();
+  if(open) setTimeout(()=>document.getElementById('searchInput').focus(), 300);
+}
+
+/* Prevent background scrolling while any drawer is open */
+function syncBodyScrollLock(){
+  const anyOpen = document.getElementById('cartDrawer').classList.contains('open')
+    || document.getElementById('searchDrawer').classList.contains('open')
+    || document.getElementById('mobileMenu').classList.contains('open');
+  document.body.style.overflow = anyOpen ? 'hidden' : '';
+}
+
+/* Escape closes whichever drawer is open */
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Escape') return;
+  toggleSearch(false);
+  toggleCart(false);
+  toggleMobileMenu(false);
+});
 
 /* ---------------- MOBILE MENU ---------------- */
 function toggleMobileMenu(open){
   document.getElementById('mobileMenu').classList.toggle('open', open);
+  syncBodyScrollLock();
 }
 document.getElementById('hamburgerBtn').addEventListener('click', ()=>toggleMobileMenu(true));
 document.getElementById('hamburgerBtn').style.display = window.innerWidth<=980 ? 'flex':'none';
@@ -198,3 +276,37 @@ const io = new IntersectionObserver((entries)=>{
   entries.forEach(e=>{ if(e.isIntersecting) e.target.classList.add('in'); });
 },{threshold:0.15});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+/* ---------------- HERO AUTO-PLAY SLIDER ---------------- */
+(function initHeroSlider(){
+  const heroSection = document.getElementById('heroSlider');
+  if(!heroSection) return;
+  const slides = Array.from(heroSection.querySelectorAll('.hero-slide'));
+  const dotsWrap = document.getElementById('heroDots');
+  let index = 0, timer = null;
+  const AUTOPLAY_MS = 4500;
+
+  dotsWrap.innerHTML = slides.map((_, i) =>
+    `<button class="hero-dot${i===0?' active':''}" onclick="goToHeroSlide(${i})" aria-label="Go to slide ${i+1}"></button>`
+  ).join('');
+  const dots = Array.from(dotsWrap.querySelectorAll('.hero-dot'));
+
+  function show(i){
+    index = (i + slides.length) % slides.length;
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === index));
+    dots.forEach((d, idx) => d.classList.toggle('active', idx === index));
+  }
+  function start(){ timer = setInterval(()=>show(index+1), AUTOPLAY_MS); }
+  function restart(){ clearInterval(timer); start(); }
+
+  window.heroNav = function(dir){ show(index+dir); restart(); };
+  window.goToHeroSlide = function(i){ show(i); restart(); };
+
+  // Pause autoplay while the user is interacting with the slider, resume after
+  heroSection.addEventListener('mouseenter', ()=>clearInterval(timer));
+  heroSection.addEventListener('mouseleave', start);
+  heroSection.addEventListener('touchstart', ()=>clearInterval(timer), {passive:true});
+  heroSection.addEventListener('touchend', restart, {passive:true});
+
+  start();
+})();

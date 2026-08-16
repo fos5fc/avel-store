@@ -27,7 +27,9 @@ Drop files in this folder using names like:
 
 ```
 assets/images/
-  hero-main.jpg
+  hero-desktop-01.jpg   hero-mobile-01.jpg   (hero slide 1 — already wired via <picture>)
+  hero-desktop-02.jpg   hero-mobile-02.jpg   (hero slide 2 — already wired via <picture>)
+  hero-desktop-03.jpg   hero-mobile-03.jpg   (hero slide 3 — already wired via <picture>)
   product-avel-one-1.jpg
   product-avel-one-2.jpg
   product-avel-two-1.jpg
